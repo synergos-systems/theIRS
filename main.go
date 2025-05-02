@@ -37,6 +37,7 @@ func main() {
         fmt.Println("too many")
         return 
     }
+    
 
 
     switch os.Args[1] {
@@ -58,19 +59,29 @@ func main() {
             break
 
         case "schemas":
-            links, err := UnpackSchemas()
+            versions, err := UnpackSchemas()
             if err != nil {
                 fmt.Println(err)
             }
-            
+            links := generateLinks(versions) 
+
             for _, uri := range links {
-                SchemaGenerator(uri)
+                fmt.Println(uri)
             }
-            fmt.Println(links)
             break
         
         default:
             fmt.Println("the argument provided doesn't exist")
     }
+}
+
+func generateLinks(versions map[string]Version) []string {
+    var links []string  
+
+    for _, version := range versions {
+        links = append(links, fmt.Sprintf(`https://www.irs.gov/pub/irs-tege/%s`, version.Schedule))
+    }
+
+    return links
 }
 

@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -24,6 +26,15 @@ var fileTracker atomic.Int32
 var (
     fileYear = ""
 )
+
+type Version struct {
+    Schedule string
+    Major int
+    Minor int
+    Sep string
+}
+
+var ledger map[string]Version
 
 func ScrapeURLs() {
     var template string
@@ -55,7 +66,8 @@ func ScrapeURLs() {
     }
 }
 
-func UnpackSchemas() ([]string, error) {
+func UnpackSchemas() (map[string]Version, error) {
+    ledger = make(map[string]Version)
     res, err := http.Get("https://www.irs.gov/charities-non-profits/tax-exempt-organization-search-teos-schemas")
     if err != nil {
         fmt.Println(err)
@@ -69,7 +81,6 @@ func UnpackSchemas() ([]string, error) {
 
     os.Mkdir("./data/990_xsd", 0777)
 
-    var links []string
     var walk func(*html.Node)
     walk = func(n *html.Node) {
         if n.Type == html.ElementNode && n.Data == "a" {
@@ -86,8 +97,8 @@ func UnpackSchemas() ([]string, error) {
         }
     }
     walk(doc)
-
-    return links, nil
+    fmt.Printf("%+v", ledger)
+    return ledger, nil
 }
 
 func UnpackZips() ([]string, error) {
@@ -132,10 +143,60 @@ func UnpackZips() ([]string, error) {
 func splitYear(uri string, strategy string) string {
     switch strategy {
     case "schema":
-        res := strings.Split(uri, "-")
-        year := strings.Split(res[len(res) - 1], "v")
+        res := strings.Split(uri, "/")
+        schedule := res[5]
+        var test []string
+        if strings.Contains(schedule, "v") {
+            test = strings.Split(schedule, "v")
+        } else {
+            return ""
+        }
+
         
-        return year[0]
+        register := strings.Split(test[0], "-")
+        
+        major, err := strconv.Atoi(string(test[1][0]))
+        if err != nil {
+            fmt.Println(err)
+        }
+
+        minor, err := strconv.Atoi(string(test[1][2]))
+        if err != nil {
+            fmt.Println(err)
+        }
+
+        sep := string(test[1][1])
+        year := register[len(register) - 1]
+        fmt.Println(string(register[0][3]))
+        key := year + ":" + string(register[0][3])
+        if found, ok := ledger[key]; ok {
+            if found.Major < major {
+                ledger[key] = Version{
+                    Schedule: schedule,
+                    Major: major,
+                    Minor: minor,
+                    Sep: sep,
+                }
+            } else if found.Major == major {
+                if found.Minor < minor {
+                    ledger[key] = Version{
+                        Schedule: schedule,
+                        Major: major,
+                        Minor: minor,
+                        Sep: sep,
+                    } 
+                }
+            }
+        } else {
+            ledger[key] = Version{
+                Schedule: schedule,
+                Major: major,
+                Minor: minor,
+                Sep: sep,
+            } 
+        }
+
+        return res[5]
     case "zips":
         res := strings.Split(uri, "/")
         
@@ -147,6 +208,7 @@ func splitYear(uri string, strategy string) string {
 
 
 func fetchSchema(uri string) {
+    fmt.Println(uri)
     res, err := http.Get(uri)
     if err != nil {
         fmt.Println(err)
@@ -159,14 +221,16 @@ func fetchSchema(uri string) {
         fileYear = year
     }
 
-    out, err := os.Create(fmt.Sprintf(`./data/990_xsd/%s_%d.zip`, year, fileTracker.Load()))
+    out, err := os.Create(fmt.Sprintf(`./data/990_xsd/%s`, year))
     if err != nil {
         fmt.Println(err)
     }
     defer out.Close()
 
     _, err = io.Copy(out, res.Body)
-    fmt.Println(err)
+    if err != nil {
+        log.Println(err)
+    }
 }
 
 func fetchZip(uri string) string {

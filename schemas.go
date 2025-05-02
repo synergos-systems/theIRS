@@ -1,10 +1,18 @@
 package main
 
-import "github.com/gocomply/xsd2go/pkg/xsd2go"
+import (
+	"fmt"
+	"os"
+)
 
 
 func SchemaGenerator(uri string) {
+    entries, err := os.ReadDir("./data/990_xsd/")
+    if err != nil {
+        fmt.Println(err)
+    }
 
-    xsd2go.Convert()
-    
+    for _, val := range entries {
+        fmt.Println(val)
+    }
 }
