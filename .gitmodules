@@ -1,0 +1,3 @@
+[submodule "xsd2go"]
+	path = xsd2go
+	url = https://github.com/DeliveranceTechSolutions/xsd2go
