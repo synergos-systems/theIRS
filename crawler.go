@@ -20,66 +20,10 @@ const (
     currentYear = 2025
 )
 
-var zipTracker atomic.Int32
+var fileTracker atomic.Int32
 var (
-    zipYear = ""
-    schemaList = []string{
-        "Form 990N Schema 2024v1.0 ZIP",
-        "Form 990T Schema 2024v5.0 ZIP",
-        "Form 990X Schema 2024v5.0 ZIP",
-        "2023 redacted schema package (990N, 990x, 990T)",
-        "Form 990N Schema 2023v1.0 ZIP",
-        "Form 990T Schema includes Shared 2023v6.0 ZIP",
-        "Form 990T Schema includes Shared 2023v7.0 ZIP",
-        "Form 990X Schema 2023v4.0 ZIP",
-        "Form 990X Schema 2023v5.0 ZIP",
-        "Form 990X Schema 2023v5.1 ZIP",
-        "2022 redacted schema package (990N, 990x, 990T)",
-        "Form 990N Schema 2022 ZIP",
-        "Form 990N Schema 2022v1.0 ZIP",
-        "Form 990T Schema includes Shared 2022 ZIP",
-        "Form 990T Schema includes Shared 2022v6.0 ZIP",
-        "Form 990T Schema includes Shared 2022v7.0 ZIP",
-        "Form 990X Schema 2022 ZIP",
-        "Form 990X Schema 2022v4.0 ZIP",
-        "Form 990X Schema 2022v4.1 ZIP",
-        "Form 990X Schema 2022v5.0 ZIP",
-        "2021 redacted schema package (990N, 990x, 990T)",
-        "Form 990N Schema 2021V1.0 ZIP",
-        "Form 990N Schema 2021V1.1 ZIP",
-        "Form 990N Schema 2021V1.2 ZIP",
-        "Form 990T Schema includes Shared 2021v4.0 ZIP",
-        "Form 990T Schema includes Shared 2021v4.1 ZIP",
-        "Form 990T Schema includes Shared 2021v4.2 ZIP",
-        "Form 990T Schema includes Shared 2021v4.3 ZIP",
-        "Form 990T Schema includes Shared 2021v4.4 ZIP",
-        "Form 990X Schema 2021v4.0 ZIP",
-        "Form 990X Schema 2021v4.1 ZIP",
-        "Form 990X Schema 2021v4.2 ZIP",
-        "Form 990X Schema 2021v4.3 ZIP",
-        "2020 redacted schema package (990N, 990x, 990T)",
-        "Form 990N Schema 2020V3.0 ZIP",
-        "Form 990T Schema includes Shared 2020v1.0 ZIP",
-        "Form 990T Schema includes Shared 2020v1.1 ZIP",
-        "Form 990T Schema includes Shared 2020v1.2 ZIP",
-        "Form 990T Schema includes Shared 2020v1.3 ZIP",
-        "Form 990X Schema 2022v4.0 ZIP",
-        "Form 990X Schema 2022v4.1 ZIP",
-        "Form 990X Schema 2022v4.2 ZIP",
-        "2019 redacted schema package (990N, 990x, 990T)",
-        "Form 990N Schema 2019v1.0 ZIP",
-        "Form 990X Schema 2019v5.0 ZIP",
-        "Form 990X Schema 2019v5.1 ZIP",
-        "2018 redacted schema package (990N, 990x, 990T)",
-        "efile990N 2018v1.0 ZIP",
-        "Form 990X Schema 2018v3.0 ZIP",
-        "Form 990X Schema 2018v3.1 ZIP",
-        "Form 990X Schema 2018v3.2 ZIP",
-        "Form 990X Schema 2018v3.3 ZIP",
-    }
+    fileYear = ""
 )
-
-
 
 func ScrapeURLs() {
     var template string
@@ -111,7 +55,7 @@ func ScrapeURLs() {
     }
 }
 
-func GenerateSchemas() ([]string, error) {
+func UnpackSchemas() ([]string, error) {
     res, err := http.Get("https://www.irs.gov/charities-non-profits/tax-exempt-organization-search-teos-schemas")
     if err != nil {
         fmt.Println(err)
@@ -123,6 +67,8 @@ func GenerateSchemas() ([]string, error) {
         fmt.Println(err)
     }
 
+    os.Mkdir("./data/990_xsd", 0777)
+
     var links []string
     var walk func(*html.Node)
     walk = func(n *html.Node) {
@@ -130,7 +76,7 @@ func GenerateSchemas() ([]string, error) {
             for _, attr := range n.Attr {
                 if attr.Key == "href" {
                     if strings.Contains(attr.Val, ".zip") {
-                        links = append(links, attr.Val)
+                        fetchSchema(attr.Val)
                     }
                 }
             }
@@ -155,6 +101,8 @@ func UnpackZips() ([]string, error) {
     if err != nil {
         fmt.Println(err)
     }
+
+    os.Mkdir(`./data/990_zips/`, 0777) 
 
     var links []string
     var walk func(*html.Node)
@@ -181,28 +129,60 @@ func UnpackZips() ([]string, error) {
     return links, nil
 }
 
-func splitYear(link string) string {
-    res := strings.Split(link, "/")
-    
-    return res[7]
+func splitYear(uri string, strategy string) string {
+    switch strategy {
+    case "schema":
+        res := strings.Split(uri, "-")
+        year := strings.Split(res[len(res) - 1], "v")
+        
+        return year[0]
+    case "zips":
+        res := strings.Split(uri, "/")
+        
+        return res[7]
+    }
+
+    return "" 
 }
 
-func fetchZip(link string) string {
-    res, err := http.Get(link)
+
+func fetchSchema(uri string) {
+    res, err := http.Get(uri)
     if err != nil {
         fmt.Println(err)
     }
     defer res.Body.Close()
-    
-    _ = os.Mkdir(`./data/990_zips/`, 0777) 
 
-    year := splitYear(link)
-    if year != zipYear {
-        zipTracker.Store(0)
-        zipYear = year
+    year := splitYear(uri, "schema")
+    if year != fileYear {
+        fileTracker.Store(0)
+        fileYear = year
     }
 
-    tracker := fmt.Sprintf(`./data/990_zips/%s_%d.zip`, year, zipTracker.Load())
+    out, err := os.Create(fmt.Sprintf(`./data/990_xsd/%s_%d.zip`, year, fileTracker.Load()))
+    if err != nil {
+        fmt.Println(err)
+    }
+    defer out.Close()
+
+    _, err = io.Copy(out, res.Body)
+    fmt.Println(err)
+}
+
+func fetchZip(uri string) string {
+    res, err := http.Get(uri)
+    if err != nil {
+        fmt.Println(err)
+    }
+    defer res.Body.Close()
+
+    year := splitYear(uri, "zips")
+    if year != fileYear {
+        fileTracker.Store(0)
+        fileYear = year
+    }
+
+    tracker := fmt.Sprintf(`./data/990_zips/%s_%d.zip`, year, fileTracker.Load())
     out, err := os.Create(tracker)
     if err != nil {
         fmt.Println(err)
@@ -212,6 +192,6 @@ func fetchZip(link string) string {
     _, err = io.Copy(out, res.Body)
     fmt.Println(err)
     
-    zipTracker.Add(1)
+    fileTracker.Add(1)
     return tracker 
 }
