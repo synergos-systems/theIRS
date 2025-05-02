@@ -25,5 +25,8 @@
 go.work
 ./data/990_zips/*
 ./data/990_schemas/*
+*/data/*
+*data*
+*theirs*
 .env
 # End of https://www.toptal.com/developers/gitignore/api/go
