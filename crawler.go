@@ -143,31 +143,35 @@ func UnpackZips() ([]string, error) {
 func splitYear(uri string, strategy string) string {
     switch strategy {
     case "schema":
+        fmt.Println(uri)
         res := strings.Split(uri, "/")
         schedule := res[5]
-        var test []string
+        
+        var sep string
+        var major, minor int
+        var test, register []string
         if strings.Contains(schedule, "v") {
             test = strings.Split(schedule, "v")
+            register = strings.Split(test[0], "-")
         } else {
-            return ""
+            register = strings.Split(schedule, "-")
+        }
+         
+        if len(test) > 0 {
+            var erra error
+            major, erra = strconv.Atoi(string(test[1][0]))
+            if erra != nil {
+                fmt.Println(erra)
+            }
+
+            minor, erra = strconv.Atoi(string(test[1][2]))
+            if erra != nil {
+                fmt.Println(erra)
+            }
+            sep = string(test[1][1])
         }
 
-        
-        register := strings.Split(test[0], "-")
-        
-        major, err := strconv.Atoi(string(test[1][0]))
-        if err != nil {
-            fmt.Println(err)
-        }
-
-        minor, err := strconv.Atoi(string(test[1][2]))
-        if err != nil {
-            fmt.Println(err)
-        }
-
-        sep := string(test[1][1])
         year := register[len(register) - 1]
-        fmt.Println(string(register[0][3]))
         key := year + ":" + string(register[0][3])
         if found, ok := ledger[key]; ok {
             if found.Major < major {
@@ -220,7 +224,7 @@ func fetchSchema(uri string) {
         fileTracker.Store(0)
         fileYear = year
     }
-
+    fmt.Println(year)
     out, err := os.Create(fmt.Sprintf(`./data/990_xsd/%s`, year))
     if err != nil {
         fmt.Println(err)

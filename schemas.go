@@ -12,57 +12,71 @@ import (
 	"github.com/gocomply/xsd2go/pkg/xsd2go"
 )
 
-func UnzipSchemas() {
-    entries, err := os.ReadDir("./data/990_xsd/")
+func UnzipSchemas() error {
+    entries, err := os.ReadDir("./data/990_xsd")
     if err != nil {
-        fmt.Println(err)
+        return fmt.Errorf("read dir: %w", err)
     }
 
-    for _, val := range entries {
-        dst := "./data/990_xsd/output"
-        fmt.Println(val)
-        archive, err := zip.OpenReader("./data/990_xsd/" + val.Name())
+    dstRoot := "./data/990_xsd/output"
+    for _, entry := range entries {
+        if entry.IsDir() {
+            continue
+        }
+        zipPath := filepath.Join("./data/990_xsd", entry.Name())
+        archive, err := zip.OpenReader(zipPath)
         if err != nil {
-            panic(err)
+            return fmt.Errorf("open zip %q: %w", zipPath, err)
         }
-        defer archive.Close()
 
-        for _, f := range archive.File {
-            filePath := filepath.Join(dst, f.Name)
-            fmt.Println("unzipping file ", filePath)
+        // process and then close immediately
+        if err := func() error {
+            defer archive.Close()
 
-            if !strings.HasPrefix(filePath, filepath.Clean(dst)+string(os.PathSeparator)) {
-                fmt.Println("invalid file path")
-                return
-            }
-            if f.FileInfo().IsDir() {
-                fmt.Println("creating directory...")
-                os.MkdirAll(filePath, os.ModePerm)
-                continue
-            }
+            for _, f := range archive.File {
+                destPath := filepath.Join(dstRoot, f.Name)
+                // guard against ZipSlip
+                if !strings.HasPrefix(destPath, filepath.Clean(dstRoot)+string(os.PathSeparator)) {
+                    return fmt.Errorf("illegal file path: %s", destPath)
+                }
 
-            if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-                panic(err)
-            }
+                if f.FileInfo().IsDir() {
+                    if err := os.MkdirAll(destPath, os.ModePerm); err != nil {
+                        return err
+                    }
+                    continue
+                }
 
-            dstFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-            if err != nil {
-                panic(err)
-            }
+                if err := os.MkdirAll(filepath.Dir(destPath), os.ModePerm); err != nil {
+                    return err
+                }
 
-            fileInArchive, err := f.Open()
-            if err != nil {
-                panic(err)
-            }
+                outFile, err := os.OpenFile(
+                    destPath,
+                    os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+                    f.Mode(),
+                )
+                if err != nil {
+                    return err
+                }
+                defer outFile.Close()
 
-            if _, err := io.Copy(dstFile, fileInArchive); err != nil {
-                panic(err)
+                rc, err := f.Open()
+                if err != nil {
+                    return err
+                }
+                defer rc.Close()
+
+                if _, err := io.Copy(outFile, rc); err != nil {
+                    return err
+                }
             }
-            
-            dstFile.Close()
-            fileInArchive.Close()
+            return nil
+        }(); err != nil {
+            return err
         }
     }
+    return nil
 }
 
 func GlobWalk(rootDir, pattern string) ([]string, error) {
@@ -70,23 +84,45 @@ func GlobWalk(rootDir, pattern string) ([]string, error) {
 
     err := filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, walkErr error) error {
         if walkErr != nil {
-            // abort the walk on error
             return walkErr
         }
-
         if d.IsDir() {
-            // skip directories
+            return nil
+        }
+        matched, err := filepath.Match(pattern, filepath.Base(path))
+        if err != nil {
+            return err
+        }
+        if !matched {
             return nil
         }
 
-        ok, err := filepath.Match(pattern, filepath.Base(path))
+        // === Begin per‐file conversion logic ===
+        // Remember current working dir
+        cwd, err := os.Getwd()
         if err != nil {
-            // bad pattern
             return err
         }
-        if ok {
-            matches = append(matches, path)
+        // Switch into the XSD’s directory so includes resolve
+        schemaDir := filepath.Dir(path)
+        if err := os.Chdir(schemaDir); err != nil {
+            return fmt.Errorf("chdir to %q: %w", schemaDir, err)
         }
+        // Restore cwd when done
+        defer os.Chdir(cwd)
+
+        // Call xsd2go.Convert on the base filename
+        if err := xsd2go.Convert(
+            filepath.Base(path),                     // just the file name now
+            "main",                                   // or whatever package name you want
+            filepath.Join(cwd, "data/990_xsd/output/generated_templates"),
+            nil,
+        ); err != nil {
+            return fmt.Errorf("xsd2go failed for %q: %w", path, err)
+        }
+        // === End per‐file conversion logic ===
+
+        matches = append(matches, path)
         return nil
     })
     if err != nil {
@@ -95,11 +131,53 @@ func GlobWalk(rootDir, pattern string) ([]string, error) {
     return matches, nil
 }
 
+
+//func GlobWalk(rootDir, pattern string) ([]string, error) {
+//    var matches []string
+//
+//    // 1) collect all matching files
+//    err := filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, walkErr error) error {
+//        if walkErr != nil {
+//            return walkErr
+//        }
+//        if d.IsDir() {
+//            return nil
+//        }
+//        ok, err := filepath.Match(pattern, filepath.Base(path))
+//        if err != nil {
+//            return err
+//        }
+//        if ok {
+//            matches = append(matches, path)
+//        }
+//        return nil
+//    })
+//    if err != nil {
+//        return nil, err
+//    }
+//
+//    // 2) call Convert once per file
+//    for _, uri := range matches {
+//        if err := xsd2go.Convert(
+//            uri,
+//            "main",                                              // package name
+//            "./data/990_xsd/output/generated_templates",         // output dir
+//            nil,                                                 // no overrides
+//        ); err != nil {
+//            return nil, fmt.Errorf("xsd2go conversion failed for %q: %w", uri, err)
+//        }
+//    }
+//
+//    return matches, nil
+//}
+
+
+
 func SchemaGenerator(uri string) {
     err := xsd2go.Convert(
         uri,
-        "main",
-        "./data/990_xsd/output/generated_templates",
+        "github.com/synergos-systems/xsd2go",
+        "./parser/xsd2go",
         nil,
     )
     if err != nil {

@@ -5,6 +5,7 @@ import (
     "fmt"
     "log"
     "os"
+    "os/exec"
     "strings"
 )
 
@@ -59,22 +60,26 @@ func main() {
         break
 
     case "schemas":
-       // versions, err := UnpackSchemas()
-       // if err != nil {
-       //     fmt.Println(err)
-       // }
-       // links := generateLinks(versions) 
-       // fmt.Println(links)
-       // UnzipSchemas()
-       files, err := GlobWalk("./data/990_xsd/output", "*.xsd")
-       if err != nil {
-        fmt.Println(err)
-       }
+        versions, err := UnpackSchemas()
+        if err != nil {
+            fmt.Println(err)
+        }
+        links := generateLinks(versions) 
+        fmt.Println(links)
+        UnzipSchemas()
+        files, err := GlobWalk("./data/990_xsd/output", "*.xsd")
+        if err != nil {
+            fmt.Println(err)
+        }
         fmt.Println(files) 
-       for _, file := range files {
-        SchemaGenerator(file)
-       }
-//        SchemaGenerator(uri)
+
+        cmd := exec.Command("bash", "chmod x+a ./models.sh; ./models.sh")
+        if err := cmd.Run(); err != nil {
+            fmt.Println("pipeline failed to run", err)
+        } else {
+            log.Println("Completed pipeline collapse")
+        }
+
         break
 
     default:
