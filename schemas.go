@@ -118,7 +118,7 @@ func GlobWalk(rootDir, pattern string) ([]string, error) {
             filepath.Join(cwd, "data/990_xsd/output/generated_templates"),
             nil,
         ); err != nil {
-            return fmt.Errorf("xsd2go failed for %q: %w", path, err)
+            fmt.Errorf("xsd2go failed for %q: %w", path, err)
         }
         // === End per‐file conversion logic ===
 

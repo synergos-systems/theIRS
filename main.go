@@ -44,7 +44,7 @@ func main() {
     switch os.Args[1] {
     case "zips":
         proceed := confirmation(`
-        This will delete any and all zip files in the ./data directory.
+        This will delete any and all zip files in the ./data/990_zips directory.
         Do not proceed with this command if you have already used it.
 
         `, 3)
@@ -81,6 +81,10 @@ func main() {
         }
 
         break
+
+    case "unzip":
+       XMLParser() 
+        
 
     default:
         fmt.Println("the argument provided doesn't exist")
