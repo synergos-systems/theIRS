@@ -83,7 +83,8 @@ func main() {
         break
 
     case "unzip":
-       XMLParser() 
+        ParseXMLs()
+
         
 
     default:
