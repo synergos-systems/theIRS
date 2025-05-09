@@ -136,6 +136,7 @@ func (x *Xmler) generateRows(root string, files []os.DirEntry, wg *sync.WaitGrou
                 rw.Unlock()
                 myInt.Add(1)
                 fmt.Println(myInt.Load())
+                x.Record = make(map[string][]string)
 
                 break
             }
